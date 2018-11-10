@@ -3,22 +3,23 @@
 """ I picked a Recurrent Neural Network and a Bitcoin dataset """
 
 ### import packages 
+#import os
 import numpy as np 
 import pandas as pd 
+from statistics import mean 
 from matplotlib import pyplot as plt 
 
-import keras 
 from keras.layers import LSTM
 from keras.layers import Dense
 from keras.models import Sequential
-from keras.callbacks import Callback
+from keras.callbacks import History 
+history = History() 
 
 import mlflow 
 import mlflow.keras
-mlflow.set_tracking_uri('/mlruns')   
+mlflow.set_tracking_uri('/Users/paulgureghian/mlruns')   
 
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score 
 
 ### read in the dataset to a dataframe 
 pd.set_option('display.max_columns', 8)
@@ -104,40 +105,23 @@ regr.add(LSTM(units =4, activation ='sigmoid', input_shape =(None, 1)))
 regr.add(Dense(units =1))
 
 ### compile the RNN 
-optimizer = 'sgd' 
-history = regr.compile(optimizer, loss = 'mean_squared_error', metrics =['mae']) 
+optimizer = 'RMSprop' 
+regr.compile(optimizer, loss = 'mean_squared_error', metrics = ['mae']) 
 
 ### fit the model on the training set 
-batch_size = 10
-epochs = 1
-regr.fit(X_train, y_train, batch_size, epochs) 
-print('') 
+batch_size = 15
+epochs = 20
+history = regr.fit(X_train, y_train, batch_size, epochs, callbacks=[history]) 
 
-### define functions to extract numerical values 
-def get_loss(history):
-    loss = history['loss']
-    return loss
-loss = get_loss(history) 
+loss = history.history['loss']  
+loss = mean(loss)
+print("loss_mean_squared_error: ", loss) 
 
-def get_metrics(history):
-    metrics = history['metrics']
-    return metrics
-metrics = get_metrics(history)
+metrics = history.history['mean_absolute_error']
+metrics = mean(metrics) 
+print("metrics_mae: ", metrics) 
+print('')
 
-### log with mlflow
-with mlflow.start_run() as run:
-      mlflow.log_param("epochs", epochs)  
-      mlflow.log_param("optimizer", optimizer)
-      mlflow.log_param("batch_size", batch_size)
-
-with mlflow.start_run() as run:      
-      mlflow.log_metric("loss", loss) 
-      mlflow.log_metric("metrics", metrics)
-      mlflow.log_artifacts("mlruns")     
-    
-      model_path = "models"
-      mlflow.keras.log_model(regr, model_path)
- 
 ### create predictions on the test set 
 test_set = df_test.values
 inputs = np.reshape(test_set, (len(test_set), 1)) 
@@ -169,23 +153,21 @@ print('')
 
 ### get evaluation of the model predictions 
 model_evaluation = regr.evaluate(inputs, predicted_BTC_price) 
-print("Model evaluation is: ", model_evaluation)  
+model_evaluation = float(model_evaluation[0])
+print("Model evaluation is: ", model_evaluation)   
 print('') 
-
-### log with mlflow 
-with mlflow.start_run() as run:
-      mlflow.log_param("model_evaluation", model_evaluation)
-
+            
 ### visualize the results 
 print("Visualize the results:") 
 print('')
 
 ### plot the actual and predicted prices 
-plt.figure(figsize =(25, 15), dpi =80, facecolor ='w', edgecolor ='k')
+fig = plt.figure(figsize =(25, 20), dpi =80, facecolor ='w', edgecolor ='k')
 ax = plt.gca() 
 plt.plot(test_set, color = 'red', label = "Real BTC Price") 
 plt.plot(predicted_BTC_price, color = 'blue', label = "Predicted BTC Price") 
 plt.title("BTC Price Prediction", fontsize = 40)
+plt.axis('tight') 
 
 ### reindex the 'df_test' dataframe 
 df_test = df_test.reset_index() 
@@ -214,11 +196,29 @@ plt.legend(loc = 2, prop = {'size' : 25})
 ### show the plot 
 plt.show()    
 
+### save the plot 
+fig.savefig('btc_price_prediction_plot.png') 
 
+### log params with mlflow
+with mlflow.start_run() as run:
+      mlflow.log_param("epochs", epochs) 
+      mlflow.log_param("optimizer", optimizer)
+      mlflow.log_param("batch_size", batch_size)
+      
+### log metrics with mlflow        
+      mlflow.log_metric("loss_mse", loss) 
+      mlflow.log_metric("metrics_mae", metrics)
+      mlflow.log_metric("model_evaluation", model_evaluation)  
 
-
-
-
+### log artifacts and model with mlflow      
+      mlflow.log_artifact('btc_price_prediction_plot.png')  
+     
+      model_path = "models"
+      mlflow.keras.log_model(regr, model_path)
+        
+      with open("info.txt", "w") as f:
+          f.write("btc_price_prediction_plot")
+      mlflow.log_artifact("info.txt")     
 
     
 
